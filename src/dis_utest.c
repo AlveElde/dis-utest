@@ -5,7 +5,13 @@
 
 int main(int argc, char *argv[])
 {
-   send_receive();
+    struct send_receive_ctx ctx;
+    printf_debug(DIS_STATUS_START);
 
+    memset(&ctx, 0, sizeof(struct send_receive_ctx));
+    send_receive(&ctx);
+    send_receive_exit(&ctx);
+
+    printf_debug(DIS_STATUS_COMPLETE);
     return 0;
 }

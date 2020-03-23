@@ -6,7 +6,8 @@ BUILD_DIR := ./build
 MKDIR := mkdir -p
 RM := -rm
 CC := gcc
-CFLAGS := -g -Wall
+CFLAGS := -g -Wall -std=c99 
+LDFLAGS := ${LDFLAGS} -libverbs
 
 SOURCES := $(shell find $(SOURCE_DIR) -name *.c)
 OBJECTS := $(SOURCES:%=$(BUILD_DIR)/%.o)
@@ -14,9 +15,8 @@ OBJECTS := $(SOURCES:%=$(BUILD_DIR)/%.o)
 INCLUDES := $(shell find $(SOURCE_DIR) -type d)
 INCLUDE_FLAGS := $(addprefix -I, $(INCLUDES))
 
-CPPFLAGS := $(INCLUDE_FLAGS) -MMD -MP
+CPPFLAGS := $(INCLUDE_FLAGS) -MMD -MP -DDEBUG
 DEPENDENCIES := $(OBJECTS:.o=.d)
--include $(DEPENDENCIES)
 
 $(BUILD_DIR)/$(TARGET): $(OBJECTS)
 	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
@@ -32,3 +32,6 @@ run:
 
 clean:
 	$(RM) -r $(BUILD_DIR)
+
+
+-include $(DEPENDENCIES)
