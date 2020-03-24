@@ -8,16 +8,26 @@
 
 int send_receive(struct send_receive_ctx *ctx)
 {
+    int i, num_devices;
     struct ibv_device **ibv_dev_list;
-
+    struct dev_ctx *dev;
     printf_debug(DIS_STATUS_START);
 
-    ibv_dev_list = ibv_get_device_list(NULL);
-	if (!ibv_dev_list) {
+    printf_debug("Getting Device List.\n");
+    num_devices = 0;
+    ibv_dev_list = ibv_get_device_list(&num_devices);
+	if (!num_devices) {
         printf_debug(DIS_STATUS_FAIL);
         return -42;
     }
 
+    for (i = 0; i < num_devices; i++) {
+        printf_debug("Found device: %s\n", ibv_dev_list[i]->name);
+    }
+
+    dev = &ctx->dev;
+    dev->port_num = 1;
+    dev->ibv_dev = ibv_dev_list[0];
     printf_debug(DIS_STATUS_COMPLETE);
     return 0;
 }
