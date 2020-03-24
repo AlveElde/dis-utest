@@ -2,6 +2,7 @@
 
 #include "dis_utest.h"
 #include "dis_send_receive.h"
+#include "dis_common.h"
 
 int main(int argc, char *argv[])
 {
