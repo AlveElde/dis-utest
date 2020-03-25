@@ -28,8 +28,10 @@ $(BUILD_DIR)/%.c.o: %.c
 .PHONY: test clean
 
 test:
+	sudo dmesg -C
 	export LD_LIBRARY_PATH=/home/alve/dis-uverbs/build/lib && \
 	cd $(BUILD_DIR) && ./$(TARGET)
+	dmesg -t
 
 clean:
 	$(RM) -r $(BUILD_DIR)

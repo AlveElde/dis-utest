@@ -31,7 +31,7 @@ struct dev_ctx {
 
 struct pd_ctx {
     struct ibv_pd       *ibv_pd;
-    struct ibv_context  *ibv_ctx;
+    // struct ibv_context  *ibv_ctx;
 };
 
 struct cq_ctx {
@@ -43,13 +43,24 @@ struct cq_ctx {
     int                     comp_vec;
 };
 
+struct qp_ctx {
+    struct ibv_qp           *ibv_qp;
+    struct ibv_pd           *ibv_pd;
+    struct ibv_qp_init_attr init_attr;
+    struct ibv_qp_attr      attr;
+    struct cq_ctx           *send_cq;
+    struct cq_ctx           *recv_cq;
+    int                     attr_mask;
+};
 
 struct send_receive_ctx {
     struct dev_ctx  dev;
     struct pd_ctx   pd[DIS_MAX_PD];
     struct cq_ctx   cq[DIS_MAX_CQ];
+    struct qp_ctx   qp[DIS_MAX_QP];
     int             pd_c;
     int             cq_c;
+    int             qp_c;
 };
 
 #endif /* __DIS_UTEST_H__ */
