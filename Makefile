@@ -31,7 +31,7 @@ test:
 	sudo dmesg -C
 	export LD_LIBRARY_PATH=/home/alve/dis-uverbs/build/lib && \
 	cd $(BUILD_DIR) && ./$(TARGET)
-	dmesg -t
+	# dmesg -t
 
 clean:
 	$(RM) -r $(BUILD_DIR)

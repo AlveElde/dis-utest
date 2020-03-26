@@ -1,5 +1,7 @@
+#define _BSD_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include <infiniband/verbs.h>
 
@@ -7,14 +9,49 @@
 #include "dis_utest.h"
 #include "dis_common.h"
 
+void print_cq(struct cq_ctx *cq)
+{
+    int i;
+    struct ibv_wc *cqe;
+    printf_debug(DIS_STATUS_START);
+
+    /* Print Result Of Transmission */
+    for(i = 0; i < cq->cqe_c; i++) {
+        cqe = &cq->cqe[i];
+        switch (cqe->opcode)
+        {
+        case IBV_WC_SEND:
+            printf_debug("CQE num: %d, Opcode: IBV_WC_SEND, status: %s, wr_id: %d\n",
+                    i, ibv_wc_status_str(cqe->status), (int)cqe->wr_id);
+            break;
+        
+        case IBV_WC_RECV:
+            printf_debug("CQE num: %d, Opcode: IBV_WC_RECV, status: %s, wr_id: %d\n",
+                    i, ibv_wc_status_str(cqe->status), (int)cqe->wr_id);
+            break;
+        default:
+            printf_debug("CQE num: %d, Opcode: Unknown\n", i);
+            break;
+        }
+    }
+    printf_debug(DIS_STATUS_COMPLETE);
+}
+
+void print_sge(struct sge_ctx *sge) {
+    printf_debug("Send message : %s", sge->send_sge);
+    printf_debug("Recv message : %s", sge->recv_sge);
+}
+
 int send_receive(struct send_receive_ctx *ctx)
 {
-    int i, ret;
+    int i, ret, sleep_ms_count;
     struct dev_ctx *dev;
     struct pd_ctx *pd;
     struct cq_ctx *cq;
     struct qp_ctx *qp;
-    struct ibv_context *ibv_ctx_safe;
+    struct rqe_ctx *rqe;
+    struct sqe_ctx *sqe;
+    struct sge_ctx *sge;
     printf_debug(DIS_STATUS_START);
 
     printf_debug("Getting Device List.\n");
@@ -54,7 +91,7 @@ int send_receive(struct send_receive_ctx *ctx)
     printf_debug("Creating Completion Queue: %d\n", ctx->cq_c);
     cq = &ctx->cq[ctx->cq_c];
     cq->ibv_ctx     = dev->ibv_ctx;
-    cq->cqe_max     = DIS_MAX_CQE;
+    cq->cqe_max     = DIS_MAX_CQE_PER_CQ;
     cq->ctx         = NULL;
     cq->comp_ch     = NULL;
     cq->comp_vec    = 0;
@@ -82,8 +119,8 @@ int send_receive(struct send_receive_ctx *ctx)
     qp->init_attr.srq           = NULL;
     qp->init_attr.qp_type       = IBV_QPT_RC;
 
-    qp->init_attr.cap.max_send_wr       = DIS_MAX_SQE + 10;
-    qp->init_attr.cap.max_recv_wr       = DIS_MAX_RQE + 10;
+    qp->init_attr.cap.max_send_wr       = DIS_MAX_SQE_PER_SQ + 10;
+    qp->init_attr.cap.max_recv_wr       = DIS_MAX_RQE_PER_RQ + 10;
 	qp->init_attr.cap.max_send_sge      = DIS_MAX_SGE;
 	qp->init_attr.cap.max_recv_sge      = DIS_MAX_SGE;
 	qp->init_attr.cap.max_inline_data   = 0;
@@ -148,26 +185,119 @@ int send_receive(struct send_receive_ctx *ctx)
         return -42;
     }
 
-    // printf_debug("Transitioing Queue Pair %d to RTS state", ctx->qp_c - 1);
-    // qp->attr.qp_state       = IBV_QPS_RTS;
-    // qp->attr.timeout        = 10;
-    // qp->attr.retry_cnt      = 10;
-    // qp->attr.rnr_retry      = 10;
-    // qp->attr.sq_psn         = 10;
-    // qp->attr.max_rd_atomic  = 1;
+    printf_debug("Transitioing Queue Pair %d to RTS state", ctx->qp_c - 1);
+    qp->attr.qp_state       = IBV_QPS_RTS;
+    qp->attr.timeout        = 10;
+    qp->attr.retry_cnt      = 10;
+    qp->attr.rnr_retry      = 10;
+    qp->attr.sq_psn         = 10;
+    qp->attr.max_rd_atomic  = 1;
 
-    // qp->attr_mask = IBV_QP_STATE;
-    // qp->attr_mask |= IBV_QP_TIMEOUT;
-    // qp->attr_mask |= IBV_QP_RETRY_CNT;
-    // qp->attr_mask |= IBV_QP_RNR_RETRY;
-    // qp->attr_mask |= IBV_QP_SQ_PSN;
-    // qp->attr_mask |= IBV_QP_MAX_QP_RD_ATOMIC;
+    qp->attr_mask = IBV_QP_STATE;
+    qp->attr_mask |= IBV_QP_TIMEOUT;
+    qp->attr_mask |= IBV_QP_RETRY_CNT;
+    qp->attr_mask |= IBV_QP_RNR_RETRY;
+    qp->attr_mask |= IBV_QP_SQ_PSN;
+    qp->attr_mask |= IBV_QP_MAX_QP_RD_ATOMIC;
 
-    // ret = ibv_modify_qp(qp->ibv_qp, &qp->attr, qp->attr_mask);
-    // if (ret) {
-    //     printf_debug(DIS_STATUS_FAIL);
-    //     return -42;
-    // }
+    ret = ibv_modify_qp(qp->ibv_qp, &qp->attr, qp->attr_mask);
+    if (ret) {
+        printf_debug(DIS_STATUS_FAIL);
+        return -42;
+    }
+
+
+    printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
+    sge = &ctx->sge[ctx->sge_c];
+    strncpy(sge->send_sge, "Hello There!", DIS_MAX_SGE_SIZE);
+    sge->length     = DIS_MAX_SGE_SIZE;
+    sge->lkey       = 123;
+    ctx->sge_c++;
+    
+    printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
+    sge = &ctx->sge[ctx->sge_c];
+    strncpy(sge->send_sge, "Gerneral Kenobi", DIS_MAX_SGE_SIZE);
+    sge->length     = DIS_MAX_SGE_SIZE;
+    sge->lkey       = 456;
+    ctx->sge_c++;
+
+    printf_debug("Posting Receive Queue Element: %d\n", qp->rqe_c);
+    rqe = &qp->rqe[qp->rqe_c];
+    rqe->ibv_qp               = qp->ibv_qp;
+    rqe->ibv_badwr            = NULL;
+
+    rqe->ibv_wr.num_sge       = ctx->sge_c;
+    rqe->ibv_wr.wr_id         = qp->rqe_c;
+    rqe->ibv_wr.next          = NULL;
+    rqe->ibv_wr.sg_list       = rqe->ibv_sge;
+    
+    for (i = 0; i < ctx->sge_c; i++) {
+        rqe->ibv_sge[i].addr      = (uintptr_t)ctx->sge[i].recv_sge;
+        rqe->ibv_sge[i].length    = ctx->sge[i].length;
+        rqe->ibv_sge[i].lkey      = ctx->sge[i].lkey;
+    }
+
+    ret = ibv_post_recv(rqe->ibv_qp, &rqe->ibv_wr, &rqe->ibv_badwr);
+    if (ret) {
+        printf_debug(DIS_STATUS_FAIL);
+        return -42;
+    }
+    qp->recv_cq->cqe_expected++;
+    qp->rqe_c++;
+
+    printf_debug("Posting Send Queue Element: %d\n", qp->sqe_c);
+    sqe = &qp->sqe[qp->sqe_c];
+    sqe->ibv_qp               = qp->ibv_qp;
+    sqe->ibv_badwr            = NULL;
+
+	sqe->ibv_wr.opcode        = IBV_WR_SEND;
+	sqe->ibv_wr.send_flags    = IBV_SEND_SIGNALED;
+    sqe->ibv_wr.num_sge       = ctx->sge_c;
+	sqe->ibv_wr.wr_id         = qp->sqe_c;
+    sqe->ibv_wr.sg_list       = sqe->ibv_sge;
+
+    for (i = 0; i < ctx->sge_c; i++) {
+        sqe->ibv_sge[i].addr      = (uintptr_t)ctx->sge[i].send_sge;
+        sqe->ibv_sge[i].length    = ctx->sge[i].length;
+        sqe->ibv_sge[i].lkey      = ctx->sge[i].lkey;
+    }
+
+    ret = ibv_post_send(sqe->ibv_qp, &sqe->ibv_wr, &sqe->ibv_badwr);
+    if (ret) {
+        printf_debug(DIS_STATUS_FAIL);
+        return -42;
+    }
+    qp->send_cq->cqe_expected++;
+    qp->sqe_c++;
+
+    printf_debug("Polling Completion Queue: %d\n", ctx->cq_c);
+    sleep_ms_count = 0;
+    while(sleep_ms_count < POLL_TIMEOUT_SEC * 1000) {
+        ret = ibv_poll_cq(cq->ibv_cq,
+                            cq->cqe_expected - cq->cqe_c,
+                            &cq->cqe[cq->cqe_c]);
+        if (ret < 0) {
+            printf_debug(DIS_STATUS_FAIL);
+            return -42;
+        }
+
+        cq->cqe_c += ret;
+        if(cq->cqe_c >= cq->cqe_expected) {
+           break;
+        }
+
+        usleep(POLL_INTERVAL_MSEC * 1000);
+        sleep_ms_count += POLL_INTERVAL_MSEC;
+    }
+
+     /* Print results */
+    for (i = 0; i < ctx->cq_c; i++) {
+        print_cq(&ctx->cq[i]);
+    }
+
+    for (i = 0; i < ctx->sge_c; i++) {
+        print_sge(&ctx->sge[i]);
+    }
 
     printf_debug(DIS_STATUS_COMPLETE);
     return 0;
