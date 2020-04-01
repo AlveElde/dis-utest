@@ -6,14 +6,17 @@
 
 #include <infiniband/verbs.h>
 
-#define DIS_MAX_PD          1
-#define DIS_MAX_CQ          1
-#define DIS_MAX_QP          1
-#define DIS_MAX_SGE         2
-#define DIS_MAX_SQE_PER_SQ  1
-#define DIS_MAX_RQE_PER_RQ  1
-#define DIS_MAX_CQE_PER_CQ  DIS_MAX_SQE_PER_SQ + DIS_MAX_RQE_PER_RQ
-#define DIS_MAX_SGE_SIZE    128
+#define PD_NUM  1
+#define CQ_NUM  1
+#define QP_NUM  1
+#define WQE_PER_QP 1
+#define SGE_PER_WQE 2
+
+#define SGE_NUM     QP_NUM * WQE_PER_QP * SGE_PER_WQE
+#define MR_NUM      SGE_NUM * 2
+#define CQE_PER_CQ  WQE_PER_QP * 2
+
+#define SGE_LENGTH  128
 
 #define POLL_TIMEOUT_SEC    10
 #define POLL_INTERVAL_MSEC  200
@@ -39,7 +42,7 @@ struct cq_ctx {
     struct ibv_cq           *ibv_cq;
     struct ibv_context      *ibv_ctx;
     struct ibv_comp_channel *comp_ch;
-    struct ibv_wc           cqe[DIS_MAX_CQE_PER_CQ];
+    struct ibv_wc           cqe[CQE_PER_CQ];
     int                     cqe_max;
     int                     cqe_expected;
     int                     cqe_c;
@@ -48,17 +51,17 @@ struct cq_ctx {
 };
 
 struct rqe_ctx {
-    struct ibv_qp            *ibv_qp;
-    struct ibv_recv_wr       ibv_wr;
-    struct ibv_sge           ibv_sge[DIS_MAX_SGE];
-    struct ibv_recv_wr *ibv_badwr;
+    struct ibv_qp       *ibv_qp;
+    struct ibv_recv_wr  ibv_wr;
+    struct ibv_sge      ibv_sge[SGE_PER_WQE];
+    struct ibv_recv_wr  *ibv_badwr;
 };
 
 struct sqe_ctx {
-    struct ibv_qp            *ibv_qp;
-    struct ibv_send_wr       ibv_wr;
-    struct ibv_sge           ibv_sge[DIS_MAX_SGE];
-    struct ibv_send_wr *ibv_badwr;
+    struct ibv_qp       *ibv_qp;
+    struct ibv_send_wr  ibv_wr;
+    struct ibv_sge      ibv_sge[SGE_PER_WQE];
+    struct ibv_send_wr  *ibv_badwr;
 };
 
 struct qp_ctx {
@@ -66,8 +69,8 @@ struct qp_ctx {
     struct ibv_pd           *ibv_pd;
     struct ibv_qp_init_attr init_attr;
     struct ibv_qp_attr      attr;
-    struct sqe_ctx          sqe[DIS_MAX_SQE_PER_SQ];
-    struct rqe_ctx          rqe[DIS_MAX_RQE_PER_RQ];
+    struct sqe_ctx          sqe[WQE_PER_QP];
+    struct rqe_ctx          rqe[WQE_PER_QP];
     struct cq_ctx           *send_cq;
     struct cq_ctx           *recv_cq;
     int                     attr_mask;
@@ -75,24 +78,33 @@ struct qp_ctx {
     int                     rqe_c;
 };
 
-
 struct sge_ctx {
-    char    send_sge[DIS_MAX_SGE_SIZE];
-    char    recv_sge[DIS_MAX_SGE_SIZE];
+    char    send_sge[SGE_LENGTH];
+    char    recv_sge[SGE_LENGTH];
     int     length;
     int     lkey;
 };
 
+struct mr_ctx {
+    struct ibv_mr   *ibv_mr;
+    struct ibv_pd   *ibv_pd;
+    int             access;
+    int             length;
+    void            *buf;
+};
+
 struct send_receive_ctx {
     struct dev_ctx  dev;
-    struct pd_ctx   pd[DIS_MAX_PD];
-    struct cq_ctx   cq[DIS_MAX_CQ];
-    struct qp_ctx   qp[DIS_MAX_QP];
-    struct sge_ctx  sge[DIS_MAX_SGE];
+    struct pd_ctx   pd[PD_NUM];
+    struct cq_ctx   cq[CQ_NUM];
+    struct qp_ctx   qp[QP_NUM];
+    struct sge_ctx  sge[SGE_NUM];
+    struct mr_ctx   mr[MR_NUM];
     int             pd_c;
     int             cq_c;
     int             qp_c;
     int             sge_c;
+    int             mr_c;
 };
 
 #endif /* __DIS_UTEST_H__ */

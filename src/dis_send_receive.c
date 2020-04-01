@@ -38,8 +38,8 @@ void print_cq(struct cq_ctx *cq)
 }
 
 void print_sge(struct sge_ctx *sge) {
-    printf_debug("Send message : %s", sge->send_sge);
-    printf_debug("Recv message : %s", sge->recv_sge);
+    printf_debug("Send message : %s\n", sge->send_sge);
+    printf_debug("Recv message : %s\n", sge->recv_sge);
 }
 
 int send_receive(struct send_receive_ctx *ctx)
@@ -52,6 +52,7 @@ int send_receive(struct send_receive_ctx *ctx)
     struct rqe_ctx *rqe;
     struct sqe_ctx *sqe;
     struct sge_ctx *sge;
+    struct mr_ctx *mr;
     printf_debug(DIS_STATUS_START);
 
     printf_debug("Getting Device List.\n");
@@ -87,11 +88,12 @@ int send_receive(struct send_receive_ctx *ctx)
 		return -42;
     }
     ctx->pd_c++;
+    pd->ibv_pd->context = dev->ibv_ctx;
 
     printf_debug("Creating Completion Queue: %d\n", ctx->cq_c);
     cq = &ctx->cq[ctx->cq_c];
     cq->ibv_ctx     = dev->ibv_ctx;
-    cq->cqe_max     = DIS_MAX_CQE_PER_CQ;
+    cq->cqe_max     = CQE_PER_CQ;
     cq->ctx         = NULL;
     cq->comp_ch     = NULL;
     cq->comp_vec    = 0;
@@ -119,10 +121,10 @@ int send_receive(struct send_receive_ctx *ctx)
     qp->init_attr.srq           = NULL;
     qp->init_attr.qp_type       = IBV_QPT_RC;
 
-    qp->init_attr.cap.max_send_wr       = DIS_MAX_SQE_PER_SQ + 10;
-    qp->init_attr.cap.max_recv_wr       = DIS_MAX_RQE_PER_RQ + 10;
-	qp->init_attr.cap.max_send_sge      = DIS_MAX_SGE;
-	qp->init_attr.cap.max_recv_sge      = DIS_MAX_SGE;
+    qp->init_attr.cap.max_send_wr       = WQE_PER_QP + 10;
+    qp->init_attr.cap.max_recv_wr       = WQE_PER_QP + 10;
+	qp->init_attr.cap.max_send_sge      = SGE_PER_WQE;
+	qp->init_attr.cap.max_recv_sge      = SGE_PER_WQE;
 	qp->init_attr.cap.max_inline_data   = 0;
 
     qp->ibv_qp = ibv_create_qp(qp->ibv_pd, &qp->init_attr);
@@ -132,7 +134,7 @@ int send_receive(struct send_receive_ctx *ctx)
     }
     ctx->qp_c++;
 
-    printf_debug("Transitioning Queue Pair %d to INIT state", ctx->qp_c - 1);
+    printf_debug("Transitioning Queue Pair %d to INIT state\n", ctx->qp_c - 1);
     qp->attr.qp_state           = IBV_QPS_INIT;
     qp->attr.qp_access_flags    = 0;
     // qp->attr.qp_access_flags    = IBV_ACCESS_REMOTE_WRITE;
@@ -147,8 +149,6 @@ int send_receive(struct send_receive_ctx *ctx)
     qp->attr_mask |= IBV_QP_PKEY_INDEX;
     qp->attr_mask |= IBV_QP_PORT;
 
-    printf_debug("Attr mask: %d\n", qp->attr_mask);
-
     ret = ibv_modify_qp(qp->ibv_qp, &qp->attr, qp->attr_mask);
     if (ret) {
         printf_debug("Error: %d\n", ret);
@@ -156,7 +156,7 @@ int send_receive(struct send_receive_ctx *ctx)
         return -42;
     }
 
-    printf_debug("Transitioning Queue Pair %d to RTR state", ctx->qp_c - 1);
+    printf_debug("Transitioning Queue Pair %d to RTR state\n", ctx->qp_c - 1);
     qp->attr.qp_state               = IBV_QPS_RTR;
     qp->attr.path_mtu               = IBV_MTU_4096;
     qp->attr.dest_qp_num            = 100;
@@ -185,7 +185,7 @@ int send_receive(struct send_receive_ctx *ctx)
         return -42;
     }
 
-    printf_debug("Transitioing Queue Pair %d to RTS state", ctx->qp_c - 1);
+    printf_debug("Transitioing Queue Pair %d to RTS state\n", ctx->qp_c - 1);
     qp->attr.qp_state       = IBV_QPS_RTS;
     qp->attr.timeout        = 10;
     qp->attr.retry_cnt      = 10;
@@ -206,20 +206,51 @@ int send_receive(struct send_receive_ctx *ctx)
         return -42;
     }
 
+    printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
+    sge = &ctx->sge[ctx->sge_c];
+    strncpy(sge->send_sge, "Hello There!", SGE_LENGTH);
+    strncpy(sge->recv_sge, "", SGE_LENGTH);
+    sge->length = SGE_LENGTH;
+    ctx->sge_c++;
+    
+    printf_debug("Initializing Memory Region for Send/Receive segment: %d\n", 
+                    ctx->sge_c - 1);
+    mr = &ctx->mr[ctx->mr_c];
+    mr->ibv_pd  = pd->ibv_pd;
+    mr->buf     = sge->send_sge;
+    mr->length  = sge->length * 2;
+    mr->access  = IBV_ACCESS_LOCAL_WRITE;
+
+    mr->ibv_mr = ibv_reg_mr(mr->ibv_pd, mr->buf, mr->length, mr->access);
+    if (!mr->ibv_mr) {
+        printf_debug(DIS_STATUS_FAIL);
+        return -42;
+    }
+    ctx->mr_c++;
+    sge->lkey = mr->ibv_mr->lkey;
 
     printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
     sge = &ctx->sge[ctx->sge_c];
-    strncpy(sge->send_sge, "Hello There!", DIS_MAX_SGE_SIZE);
-    sge->length     = DIS_MAX_SGE_SIZE;
-    sge->lkey       = 123;
+    strncpy(sge->send_sge, "Gerneral Kenobi", SGE_LENGTH);
+    strncpy(sge->recv_sge, "", SGE_LENGTH);
+    sge->length = SGE_LENGTH;
     ctx->sge_c++;
     
-    printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
-    sge = &ctx->sge[ctx->sge_c];
-    strncpy(sge->send_sge, "Gerneral Kenobi", DIS_MAX_SGE_SIZE);
-    sge->length     = DIS_MAX_SGE_SIZE;
-    sge->lkey       = 456;
-    ctx->sge_c++;
+    printf_debug("Initializing Memory Region for Send/Receive segment: %d\n", 
+                    ctx->sge_c - 1);
+    mr = &ctx->mr[ctx->mr_c];
+    mr->ibv_pd  = pd->ibv_pd;
+    mr->buf     = sge->send_sge;
+    mr->length  = sge->length * 2;
+    mr->access  = IBV_ACCESS_LOCAL_WRITE;
+
+    mr->ibv_mr = ibv_reg_mr(mr->ibv_pd, mr->buf, mr->length, mr->access);
+    if (!mr->ibv_mr) {
+        printf_debug(DIS_STATUS_FAIL);
+        return -42;
+    }
+    ctx->mr_c++;
+    sge->lkey = mr->ibv_mr->lkey;
 
     printf_debug("Posting Receive Queue Element: %d\n", qp->rqe_c);
     rqe = &qp->rqe[qp->rqe_c];
@@ -309,6 +340,11 @@ void send_receive_exit(struct send_receive_ctx *ctx)
     printf_debug(DIS_STATUS_START);
 
     printf_debug("Cleaning up context\n");
+    for (i = 0; i < ctx->mr_c; i++) {
+        ibv_dereg_mr(ctx->mr[i].ibv_mr);
+        printf_debug("Destroy MR %d: " DIS_STATUS_COMPLETE, i);
+    }
+
     for (i = 0; i < ctx->qp_c; i++) {
         ibv_destroy_qp(ctx->qp[i].ibv_qp);
         printf_debug("Destroy QP %d: " DIS_STATUS_COMPLETE, i);
