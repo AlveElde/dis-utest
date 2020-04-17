@@ -16,7 +16,7 @@
 #define MR_NUM      SGE_NUM * 2
 #define CQE_PER_CQ  WQE_PER_QP * 2
 
-#define SGE_LENGTH  128
+#define SGE_LENGTH  100000
 
 #define POLL_TIMEOUT_SEC    10
 #define POLL_INTERVAL_MSEC  200

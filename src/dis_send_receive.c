@@ -13,9 +13,8 @@ void print_cq(struct cq_ctx *cq)
 {
     int i;
     struct ibv_wc *cqe;
-    printf_debug(DIS_STATUS_START);
+    printf_debug("Printing Result Of Transmission:\n");
 
-    /* Print Result Of Transmission */
     for(i = 0; i < cq->cqe_c; i++) {
         cqe = &cq->cqe[i];
         switch (cqe->opcode)
@@ -34,12 +33,28 @@ void print_cq(struct cq_ctx *cq)
             break;
         }
     }
-    printf_debug(DIS_STATUS_COMPLETE);
 }
 
-void print_sge(struct sge_ctx *sge) {
+void print_sge(struct sge_ctx *sge, int sge_num) {
+    printf_debug("Segment: %d\n", sge_num);
     printf_debug("Send message : %s\n", sge->send_sge);
     printf_debug("Recv message : %s\n", sge->recv_sge);
+}
+
+void check_sge(struct sge_ctx *sge, int sge_num) {
+    int i, fail_counter;
+    fail_counter = 0;
+    for (i = 0; i < SGE_LENGTH; i++) {
+        if (sge->send_sge[i] != sge->recv_sge[i]) {
+            printf_debug("Sge %d error at i: %d, send = %c, recv = %c\n",
+                sge_num, i, sge->send_sge[i], sge->recv_sge[i]);
+            fail_counter++;
+        }
+
+        if(fail_counter > 10) {
+            break;
+        }
+    }
 }
 
 int send_receive(struct send_receive_ctx *ctx)
@@ -137,12 +152,12 @@ int send_receive(struct send_receive_ctx *ctx)
     printf_debug("Transitioning Queue Pair %d to INIT state\n", ctx->qp_c - 1);
     qp->attr.qp_state           = IBV_QPS_INIT;
     qp->attr.qp_access_flags    = 0;
-    // qp->attr.qp_access_flags    = IBV_ACCESS_REMOTE_WRITE;
-    // qp->attr.qp_access_flags    |= IBV_ACCESS_REMOTE_READ;
-    // qp->attr.qp_access_flags    |= IBV_ACCESS_LOCAL_WRITE;
+    qp->attr.qp_access_flags    = IBV_ACCESS_REMOTE_WRITE;
+    qp->attr.qp_access_flags    |= IBV_ACCESS_REMOTE_READ;
+    qp->attr.qp_access_flags    |= IBV_ACCESS_LOCAL_WRITE;
     qp->attr.pkey_index         = 0;
     qp->attr.port_num           = dev->port_num;
-    qp->ibv_qp->context = dev->ibv_ctx;
+    qp->ibv_qp->context         = dev->ibv_ctx;
 
     qp->attr_mask = IBV_QP_STATE;
     qp->attr_mask |= IBV_QP_ACCESS_FLAGS;
@@ -208,8 +223,9 @@ int send_receive(struct send_receive_ctx *ctx)
 
     printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
     sge = &ctx->sge[ctx->sge_c];
-    strncpy(sge->send_sge, "Hello There!", SGE_LENGTH);
-    strncpy(sge->recv_sge, "", SGE_LENGTH);
+    memset(sge->send_sge, 'a', SGE_LENGTH);
+    strncpy(sge->send_sge, "Hello There!", 20);
+    strncpy(sge->recv_sge, "", 20);
     sge->length = SGE_LENGTH;
     ctx->sge_c++;
     
@@ -231,8 +247,9 @@ int send_receive(struct send_receive_ctx *ctx)
 
     printf_debug("Initializing Send/Receive Segment: %d\n", ctx->sge_c);
     sge = &ctx->sge[ctx->sge_c];
-    strncpy(sge->send_sge, "Gerneral Kenobi", SGE_LENGTH);
-    strncpy(sge->recv_sge, "", SGE_LENGTH);
+    memset(sge->send_sge, 'b', SGE_LENGTH);
+    strncpy(sge->send_sge, "Gerneral Kenobi", 20);
+    strncpy(sge->recv_sge, "", 20);
     sge->length = SGE_LENGTH;
     ctx->sge_c++;
     
@@ -327,7 +344,11 @@ int send_receive(struct send_receive_ctx *ctx)
     }
 
     for (i = 0; i < ctx->sge_c; i++) {
-        print_sge(&ctx->sge[i]);
+        print_sge(&ctx->sge[i], i);
+    }
+
+    for (i = 0; i < ctx->sge_c; i++) {
+        check_sge(&ctx->sge[i], i);
     }
 
     printf_debug(DIS_STATUS_COMPLETE);
